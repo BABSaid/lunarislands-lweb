@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Building2, LogOut, Plus, Edit, Trash2, Shield, BookOpen } from 'lucide-react';
+import { Users, Building2, LogOut, Plus, Edit, Trash2, Shield, BookOpen, Webhook } from 'lucide-react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { WebhookManager } from '../components/WebhookManager';
 
 interface User {
   id: string;
@@ -24,7 +25,7 @@ interface Entreprise {
 }
 
 export function StaffPanel() {
-  const [activeTab, setActiveTab] = useState<'entreprises' | 'users'>('entreprises');
+  const [activeTab, setActiveTab] = useState<'entreprises' | 'users' | 'webhooks'>('entreprises');
   const [users, setUsers] = useState<User[]>([]);
   const [entreprises, setEntreprises] = useState<Entreprise[]>([]);
   const [loading, setLoading] = useState(true);
@@ -265,6 +266,17 @@ export function StaffPanel() {
             <Users className="w-5 h-5" />
             Utilisateurs ({users.length})
           </button>
+          <button
+            onClick={() => setActiveTab('webhooks')}
+            className={`px-6 py-3 rounded-lg font-semibold transition-colors flex items-center gap-2 ${
+              activeTab === 'webhooks'
+                ? 'bg-amber-600 text-white'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            <Webhook className="w-5 h-5" />
+            Webhooks
+          </button>
         </div>
 
         {/* Entreprises Tab */}
@@ -409,6 +421,13 @@ export function StaffPanel() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {/* Webhooks Tab */}
+        {activeTab === 'webhooks' && (
+          <div>
+            <WebhookManager entreprises={entreprises} />
           </div>
         )}
       </div>

@@ -2,10 +2,12 @@ import { Building2, ShoppingBag, Hammer, Wheat, Gem, Sword, Landmark } from 'luc
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { OrderForm } from '../components/OrderForm';
 
 export function Entreprises() {
   const [entreprises, setEntreprises] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedEntreprise, setSelectedEntreprise] = useState<any | null>(null);
 
   useEffect(() => {
     loadEntreprises();
@@ -303,7 +305,7 @@ export function Entreprises() {
                   <p className="text-slate-400 mb-3 text-sm">
                     {entreprise.description}
                   </p>
-                  <div className="border-t border-slate-700 pt-3 mt-3">
+                  <div className="border-t border-slate-700 pt-3 mt-3 mb-4">
                     <p className="text-sm text-slate-500">
                       Propriétaire: <span className="text-amber-500">{entreprise.owner}</span>
                     </p>
@@ -311,6 +313,13 @@ export function Entreprises() {
                       Spécialité: <span className="text-white">{entreprise.specialty}</span>
                     </p>
                   </div>
+                  <button
+                    onClick={() => setSelectedEntreprise(entreprise)}
+                    className="w-full px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors font-semibold flex items-center justify-center gap-2"
+                  >
+                    <ShoppingBag className="w-4 h-4" />
+                    Commander
+                  </button>
                 </div>
               ))
             )}
@@ -336,6 +345,15 @@ export function Entreprises() {
           <p>&copy; 2026 LunarisLands - Tous droits réservés</p>
         </div>
       </footer>
+
+      {/* Order Form Modal */}
+      {selectedEntreprise && (
+        <OrderForm
+          entrepriseId={selectedEntreprise.id}
+          entrepriseName={selectedEntreprise.name}
+          onClose={() => setSelectedEntreprise(null)}
+        />
+      )}
     </div>
   );
 }

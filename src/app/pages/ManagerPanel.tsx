@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, LogOut, Save, BarChart3, Shield, Users, Home, Settings, BookOpen } from 'lucide-react';
+import { Building2, LogOut, Save, BarChart3, Shield, Users, Home, Settings, BookOpen, Package, ShoppingCart } from 'lucide-react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { EmployeeManager } from '../components/EmployeeManager';
 import { Dashboard } from '../components/Dashboard';
+import { ProductManager } from '../components/ProductManager';
+import { OrderManager } from '../components/OrderManager';
 
 interface Entreprise {
   id: string;
@@ -38,7 +40,7 @@ export function ManagerPanel() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'company' | 'employees'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'company' | 'employees' | 'products' | 'orders'>('dashboard');
   const [formData, setFormData] = useState({
     description: '',
     specialty: '',
@@ -296,6 +298,20 @@ export function ManagerPanel() {
             <Users className="w-4 h-4" />
             <span>Employés</span>
           </button>
+          <button
+            onClick={() => setActiveTab('products')}
+            className={`px-4 py-2 ${activeTab === 'products' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'} rounded-lg transition-colors flex items-center gap-2`}
+          >
+            <Package className="w-4 h-4" />
+            <span>Produits</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('orders')}
+            className={`px-4 py-2 ${activeTab === 'orders' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'} rounded-lg transition-colors flex items-center gap-2`}
+          >
+            <ShoppingCart className="w-4 h-4" />
+            <span>Commandes</span>
+          </button>
         </div>
 
         {/* Dashboard */}
@@ -420,6 +436,20 @@ export function ManagerPanel() {
         {activeTab === 'employees' && (
           <div className="mt-8">
             <EmployeeManager entrepriseId={entreprise.id} userGrade={user.grade || 'player'} />
+          </div>
+        )}
+
+        {/* Product Manager */}
+        {activeTab === 'products' && (
+          <div className="mt-8">
+            <ProductManager entrepriseId={entreprise.id} />
+          </div>
+        )}
+
+        {/* Order Manager */}
+        {activeTab === 'orders' && (
+          <div className="mt-8">
+            <OrderManager entrepriseId={entreprise.id} />
           </div>
         )}
       </div>
