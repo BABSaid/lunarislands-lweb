@@ -63,6 +63,13 @@ export function ManagerPanel() {
       setUser(localUser);
       console.log('📊 Current user from localStorage:', localUser);
 
+      // 🔒 SECURITY CHECK: Only patrons and co-gérants can access this panel
+      if (localUser.role && !['patron', 'co-gerant'].includes(localUser.role)) {
+        console.error('❌ Access denied: User role is not authorized for management panel');
+        navigate('/');
+        return;
+      }
+
       // Check if user has an entreprise
       if (!localUser.entrepriseId) {
         console.error('❌ No entrepriseId found for user');
@@ -97,6 +104,13 @@ export function ManagerPanel() {
             localStorage.setItem('user', JSON.stringify(data.user));
             setUser(data.user);
             console.log('✅ User data refreshed in ManagerPanel:', data.user);
+            
+            // 🔒 RE-CHECK after refresh: User might have been demoted
+            if (data.user.role && !['patron', 'co-gerant'].includes(data.user.role)) {
+              console.error('❌ Access denied after refresh: User role changed');
+              navigate('/');
+              return;
+            }
           }
         }
       } catch (error) {

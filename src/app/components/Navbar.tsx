@@ -74,7 +74,13 @@ export function Navbar() {
       if (user.grade === 'staff') {
         navigate('/staff');
       } else if (user.entrepriseId) {
-        navigate('/manager');
+        // Redirect based on role
+        if (user.role && ['patron', 'co-gerant'].includes(user.role)) {
+          navigate('/manager');
+        } else {
+          // Regular employees go to home or a dedicated employee dashboard
+          navigate('/');
+        }
       }
       setIsDropdownOpen(false);
     }
@@ -85,7 +91,7 @@ export function Navbar() {
     setIsDropdownOpen(false);
   };
 
-  const canAccessDashboard = user && (user.grade === 'staff' || user.entrepriseId);
+  const canAccessDashboard = user && (user.grade === 'staff' || (user.entrepriseId && user.role && ['patron', 'co-gerant'].includes(user.role)));
   const canAccessGestion = user && user.role && ['patron', 'co-gerant'].includes(user.role);
 
   const navItems = [

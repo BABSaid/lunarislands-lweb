@@ -33,7 +33,7 @@ export function Home() {
           <ImageWithFallback
             src="https://i.imgur.com/1H1HYR8.png"
             alt="LunarisLands Banner"
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover blur-sm"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-slate-950/70 via-slate-950/50 to-slate-950"></div>
         </div>
@@ -107,24 +107,24 @@ export function Home() {
       {/* Server Info Section */}
       <section className="py-20 px-4 bg-slate-900/50">
         <div className="max-w-5xl mx-auto">
-          <div className="bg-slate-800 border border-amber-900/30 rounded-lg p-8 md:p-12">
+          <div className="bg-slate-800/80 backdrop-blur-md border border-amber-900/30 rounded-lg p-8 md:p-12">
             <h2 className="text-3xl font-bold text-white mb-8 text-center">
               Informations du Serveur
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div>
+              <div className="text-center">
                 <h3 className="text-amber-500 font-semibold mb-2">Version</h3>
                 <p className="text-white text-lg">Minecraft 1.21.4 NeoForge</p>
               </div>
-              <div>
+              <div className="text-center">
                 <h3 className="text-amber-500 font-semibold mb-2">Type de Serveur</h3>
                 <p className="text-white text-lg">Semi-RP Médiéval</p>
               </div>
-              <div>
+              <div className="text-center">
                 <h3 className="text-amber-500 font-semibold mb-2">Adresse IP</h3>
                 <p className="text-white text-lg">Disponible sur Discord</p>
               </div>
-              <div>
+              <div className="text-center">
                 <h3 className="text-amber-500 font-semibold mb-2">Communauté</h3>
                 <p className="text-white text-lg">Active et Bienveillante</p>
               </div>

@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { Home } from './pages/Home';
 import { Entreprises } from './pages/Entreprises';
@@ -11,6 +12,20 @@ import { PermissionsGuide } from './pages/PermissionsGuide';
 
 function AppContent() {
   const location = useLocation();
+
+  useEffect(() => {
+    // Mettre à jour le titre de la page
+    document.title = 'LunarisLands - Semi-RP';
+
+    // Mettre à jour le favicon
+    let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.getElementsByTagName('head')[0].appendChild(link);
+    }
+    link.href = 'https://i.imgur.com/Oo1ELPJ.png';
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-950">
