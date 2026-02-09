@@ -1,11 +1,23 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Mail, Shield, Calendar, Save, ArrowLeft } from 'lucide-react';
+import { User, Mail, Shield, Calendar, Save, ArrowLeft, Lock, Eye, EyeOff } from 'lucide-react';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 export function AccountSettings() {
   const navigate = useNavigate();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Password change state
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
 
   useEffect(() => {
     const userStr = localStorage.getItem('user');
@@ -16,6 +28,55 @@ export function AccountSettings() {
     setUser(JSON.parse(userStr));
     setLoading(false);
   }, []);
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess('');
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Les mots de passe ne correspondent pas');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setPasswordError('Le mot de passe doit contenir au moins 6 caractères');
+      return;
+    }
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-dec47541/account/password`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({ currentPassword, newPassword }),
+        }
+      );
+
+      if (response.ok) {
+        setPasswordSuccess('Mot de passe modifié avec succès !');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setShowPasswordForm(false);
+      } else {
+        const data = await response.json();
+        setPasswordError(data.error || 'Erreur lors de la modification du mot de passe');
+      }
+    } catch (error) {
+      setPasswordError('Une erreur est survenue');
+    }
+  };
 
   if (loading) {
     return (
@@ -150,8 +211,136 @@ export function AccountSettings() {
           </div>
         )}
 
+        {/* Password Change Section */}
+        <div className="bg-slate-900 border border-amber-900/30 rounded-lg p-6 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <Lock className="w-6 h-6 text-amber-500" />
+              <h3 className="text-xl font-bold text-white">Mot de passe</h3>
+            </div>
+            {!showPasswordForm && (
+              <button
+                onClick={() => setShowPasswordForm(true)}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors text-sm font-semibold"
+              >
+                Modifier
+              </button>
+            )}
+          </div>
+
+          {passwordSuccess && (
+            <div className="bg-green-500/10 border border-green-500/30 text-green-400 px-4 py-3 rounded-lg mb-4">
+              {passwordSuccess}
+            </div>
+          )}
+
+          {passwordError && (
+            <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-lg mb-4">
+              {passwordError}
+            </div>
+          )}
+
+          {showPasswordForm ? (
+            <form onSubmit={handlePasswordChange} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Mot de passe actuel *
+                </label>
+                <div className="relative">
+                  <input
+                    type={showCurrentPassword ? 'text' : 'password'}
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="w-full px-4 py-3 pr-12 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-amber-500"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  >
+                    {showCurrentPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Nouveau mot de passe *
+                </label>
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-4 py-3 pr-12 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-amber-500"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  >
+                    {showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+                <p className="text-slate-500 text-xs mt-1">Au moins 6 caractères</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Confirmer le nouveau mot de passe *
+                </label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full px-4 py-3 pr-12 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-amber-500"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-semibold flex items-center gap-2"
+                >
+                  <Save className="w-4 h-4" />
+                  Enregistrer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasswordForm(false);
+                    setCurrentPassword('');
+                    setNewPassword('');
+                    setConfirmPassword('');
+                    setPasswordError('');
+                  }}
+                  className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+                >
+                  Annuler
+                </button>
+              </div>
+            </form>
+          ) : (
+            <p className="text-slate-400 text-sm">
+              Cliquez sur "Modifier" pour changer votre mot de passe.
+            </p>
+          )}
+        </div>
+
         {/* Security Notice */}
-        <div className="bg-slate-900 border border-slate-700 rounded-lg p-6">
+        <div className="bg-slate-900 border border-slate-700 rounded-lg p-6 mb-8">
           <h3 className="text-xl font-bold text-white mb-4">Sécurité et Confidentialité</h3>
           <div className="space-y-3 text-slate-300">
             <p>• Vos informations personnelles sont sécurisées et ne sont jamais partagées avec des tiers.</p>
@@ -162,10 +351,9 @@ export function AccountSettings() {
         </div>
 
         {/* Future Features Notice */}
-        <div className="mt-8 bg-blue-500/10 border border-blue-500/30 rounded-lg p-6">
+        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-6">
           <h3 className="text-xl font-bold text-blue-400 mb-4">🚧 Fonctionnalités à venir</h3>
           <div className="space-y-2 text-blue-300 text-sm">
-            <p>• Modification du mot de passe</p>
             <p>• Personnalisation du profil (avatar, bio, etc.)</p>
             <p>• Historique des activités</p>
             <p>• Paramètres de notification</p>

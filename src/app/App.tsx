@@ -9,6 +9,8 @@ import { StaffPanel } from './pages/StaffPanel';
 import { ManagerPanel } from './pages/ManagerPanel';
 import { AccountSettings } from './pages/AccountSettings';
 import { PermissionsGuide } from './pages/PermissionsGuide';
+import { Tickets } from './pages/Tickets';
+import { Events } from './pages/Events';
 
 function AppContent() {
   const location = useLocation();
@@ -33,6 +35,8 @@ function AppContent() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/entreprises" element={<Entreprises />} />
+        <Route path="/events" element={<Events />} />
+        <Route path="/tickets" element={<Tickets />} />
         <Route path="/reglement" element={<Reglement />} />
         <Route path="/login" element={<Login />} />
         <Route path="/staff" element={<StaffPanel />} />

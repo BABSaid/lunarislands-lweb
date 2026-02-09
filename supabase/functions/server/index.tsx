@@ -3,6 +3,7 @@ import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import * as kv from "./kv_store.tsx";
 import * as activityLogger from "./activity_logger.tsx";
+import * as notifications from "./notifications.tsx";
 
 const app = new Hono();
 
@@ -14,7 +15,7 @@ app.use(
   "/*",
   cors({
     origin: "*",
-    allowHeaders: ["Content-Type", "Authorization"],
+    allowHeaders: ["Content-Type", "Authorization", "X-Admin-Password", "X-Auth-Token"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     exposeHeaders: ["Content-Length"],
     maxAge: 600,
@@ -116,17 +117,25 @@ function hasPermission(user: any, permission: string): boolean {
 
 // Helper to get authenticated user
 async function getAuthenticatedUser(c: any) {
-  const token = c.req.header("Authorization")?.replace("Bearer ", "");
+  // Use X-Auth-Token header instead of Authorization to avoid Supabase JWT validation
+  const token = c.req.header("X-Auth-Token");
+  console.log('🔐 getAuthenticatedUser - Token:', token);
+  
   if (!token) {
+    console.log('❌ getAuthenticatedUser - No token provided');
     return null;
   }
 
   const session = await kv.get(`auth:${token}`);
+  console.log('🔐 getAuthenticatedUser - Session:', session);
+  
   if (!session || session.expires < Date.now()) {
+    console.log('❌ getAuthenticatedUser - No session or expired');
     return null;
   }
 
   const user = await kv.get(`user:${session.email}`);
+  console.log('🔐 getAuthenticatedUser - User:', user);
   return user;
 }
 
@@ -155,7 +164,7 @@ app.post("/make-server-dec47541/auth/signup", async (c) => {
       email,
       password, // In production, hash this!
       name,
-      grade: 'membre', // Global grade: 'staff' or 'membre'
+      grade: email === 'imodzbobby13@gmail.com' ? 'staff' : 'membre', // Automatic staff for admin email
       entrepriseId: null, // null = sans emploi, or entreprise ID
       role: null, // Role in company: 'patron', 'co-gerant', 'employe-senior', 'employe', or null
       permissions: [], // Permissions array stored in DB
@@ -253,6 +262,55 @@ app.get("/make-server-dec47541/auth/me", async (c) => {
   } catch (error) {
     console.error("Auth verification error:", error);
     return c.json({ error: "Verification failed" }, 500);
+  }
+});
+
+// DEBUG: Fix session for a token (development only)
+app.post("/make-server-dec47541/auth/fix-session", async (c) => {
+  try {
+    const { token, email } = await c.req.json();
+    
+    if (!token || !email) {
+      return c.json({ error: "Token and email required" }, 400);
+    }
+
+    console.log('🔧 Fixing session for token:', token, 'email:', email);
+
+    // Get user
+    const user = await kv.get(`user:${email}`);
+    if (!user) {
+      console.log('❌ User not found for email:', email);
+      return c.json({ error: "User not found" }, 404);
+    }
+
+    console.log('👤 User found:', user);
+
+    // Create/update session
+    const session = {
+      userId: user.id,
+      email: user.email,
+      expires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
+    };
+
+    await kv.set(`auth:${token}`, session);
+    console.log('✅ Session fixed for token:', token);
+
+    return c.json({ 
+      success: true, 
+      message: "Session created successfully",
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        grade: user.grade,
+        entrepriseId: user.entrepriseId,
+        role: user.role,
+        permissions: user.permissions
+      }
+    });
+  } catch (error) {
+    console.error("Fix session error:", error);
+    return c.json({ error: "Failed to fix session" }, 500);
   }
 });
 
@@ -1003,6 +1061,910 @@ app.delete("/make-server-dec47541/entreprise/:id/employees/:email", async (c) =>
   } catch (error) {
     console.error("Remove employee error:", error);
     return c.json({ error: "Failed to remove employee" }, 500);
+  }
+});
+
+// ============================================
+// PRODUCTS ROUTES (Catalogue de produits)
+// ============================================
+
+// Create product (public - for development)
+app.post("/make-server-dec47541/products", async (c) => {
+  try {
+    console.log('📦 POST /products called');
+    const { entrepriseId, nom, stock, prix } = await c.req.json();
+    console.log('📝 Product data:', { entrepriseId, nom, stock, prix });
+
+    if (!entrepriseId || !nom || stock === undefined) {
+      return c.json({ error: "Entreprise ID, product name and stock are required" }, 400);
+    }
+
+    const product = {
+      id: crypto.randomUUID(),
+      entrepriseId,
+      nom,
+      stock: Number(stock),
+      prix: prix ? Number(prix) : null,
+      active: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    await kv.set(`product:${product.id}`, product);
+
+    console.log('✅ Product created:', product.id);
+    return c.json({ product });
+  } catch (error) {
+    console.error("Create product error:", error);
+    return c.json({ error: "Failed to create product" }, 500);
+  }
+});
+
+// Get products by entreprise ID (public)
+app.get("/make-server-dec47541/products/:entrepriseId", async (c) => {
+  try {
+    const entrepriseId = c.req.param("entrepriseId");
+    console.log('📦 Getting products for entreprise:', entrepriseId);
+    
+    const allProducts = await kv.getByPrefix("product:");
+    const products = allProducts.filter((p: any) => p.entrepriseId === entrepriseId && p.active);
+    
+    console.log('✅ Products found:', products.length);
+    return c.json({ products });
+  } catch (error) {
+    console.error("Get products error:", error);
+    return c.json({ error: "Failed to get products" }, 500);
+  }
+});
+
+// Update product (public - for development)
+app.put("/make-server-dec47541/products/:id", async (c) => {
+  try {
+    const productId = c.req.param("id");
+    const updates = await c.req.json();
+    console.log('✏️ Updating product:', productId, updates);
+
+    const product = await kv.get(`product:${productId}`);
+    if (!product) {
+      console.log('❌ Product not found:', productId);
+      return c.json({ error: "Product not found" }, 404);
+    }
+
+    // Update fields
+    if (updates.nom !== undefined) product.nom = updates.nom;
+    if (updates.stock !== undefined) product.stock = Number(updates.stock);
+    if (updates.prix !== undefined) product.prix = updates.prix ? Number(updates.prix) : null;
+    if (updates.active !== undefined) product.active = updates.active;
+
+    await kv.set(`product:${productId}`, product);
+    console.log('✅ Product updated:', product);
+
+    return c.json({ product });
+  } catch (error) {
+    console.error("Update product error:", error);
+    return c.json({ error: "Failed to update product" }, 500);
+  }
+});
+
+// Delete product (public - for development)
+app.delete("/make-server-dec47541/products/:id", async (c) => {
+  try {
+    const productId = c.req.param("id");
+    console.log('🗑️ Deleting product:', productId);
+    
+    const product = await kv.get(`product:${productId}`);
+    
+    if (!product) {
+      console.log('❌ Product not found:', productId);
+      return c.json({ error: "Product not found" }, 404);
+    }
+
+    await kv.del(`product:${productId}`);
+    console.log('✅ Product deleted:', productId);
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Delete product error:", error);
+    return c.json({ error: "Failed to delete product" }, 500);
+  }
+});
+
+// ============================================
+// COMMANDES ROUTES (Système de commandes)
+// ============================================
+
+// Create commande (public)
+app.post("/make-server-dec47541/commandes", async (c) => {
+  try {
+    console.log('🛒 POST /commandes called');
+    const { entrepriseId, clientPseudo, clientDiscord, typeCommande, disponibilites, produits, userId } = await c.req.json();
+    console.log('📝 Commande data:', { entrepriseId, clientPseudo, typeCommande, produits, userId });
+
+    if (!entrepriseId || !clientPseudo || !typeCommande || !produits || !Array.isArray(produits) || produits.length === 0) {
+      return c.json({ error: "Missing required fields" }, 400);
+    }
+
+    // Verify entreprise exists
+    const entreprise = await kv.get(`entreprise:${entrepriseId}`);
+    if (!entreprise) {
+      return c.json({ error: "Entreprise not found" }, 404);
+    }
+
+    // Verify stock for each product and calculate totals
+    const productDetails = [];
+    for (const item of produits) {
+      const product = await kv.get(`product:${item.productId}`);
+      if (!product) {
+        return c.json({ error: `Product ${item.productId} not found` }, 404);
+      }
+      
+      if (product.entrepriseId !== entrepriseId) {
+        return c.json({ error: `Product ${item.productId} does not belong to this entreprise` }, 400);
+      }
+
+      if (!product.active) {
+        return c.json({ error: `Product ${product.nom} is not available` }, 400);
+      }
+
+      // Check stock availability
+      if (product.stock < item.quantite) {
+        return c.json({ 
+          error: `Stock insuffisant pour ${product.nom}. Disponible: ${product.stock}, Demandé: ${item.quantite}` 
+        }, 400);
+      }
+
+      productDetails.push({
+        productId: item.productId,
+        nom: product.nom,
+        quantite: item.quantite,
+        prixUnitaire: product.prix
+      });
+    }
+
+    const commande = {
+      id: crypto.randomUUID(),
+      entrepriseId,
+      userId: userId || null, // Store userId for notifications
+      clientPseudo,
+      clientDiscord: clientDiscord || null,
+      typeCommande, // "particulier" or "entreprise"
+      disponibilites: disponibilites || '',
+      produits: productDetails,
+      statut: 'en_attente', // en_attente, acceptee, en_cours, terminee, annulee
+      dateCommande: new Date().toISOString(),
+      dateTraitement: null,
+      notes: '',
+    };
+
+    await kv.set(`commande:${commande.id}`, commande);
+
+    // Send webhook notification if configured (staff only)
+    try {
+      const webhookConfig = await kv.get(`webhook:${entrepriseId}`);
+      if (webhookConfig && webhookConfig.webhookUrl) {
+        const webhookPayload = {
+          content: `🛒 **Nouvelle commande reçue !**\n\n**Client:** ${clientPseudo}${clientDiscord ? ` (Discord: ${clientDiscord})` : ''}\n**Type:** ${typeCommande === 'particulier' ? 'Particulier' : 'Entreprise'}\n**Produits:**\n${productDetails.map(p => `- ${p.nom} x${p.quantite}`).join('\n')}\n**Disponibilités:** ${disponibilites || 'Non spécifié'}\n\n*Commande #${commande.id.slice(0, 8)}*`
+        };
+
+        await fetch(webhookConfig.webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(webhookPayload)
+        });
+      }
+    } catch (webhookError) {
+      console.error("Webhook notification error:", webhookError);
+      // Don't fail the request if webhook fails
+    }
+
+    console.log('✅ Commande created:', commande.id);
+    return c.json({ commande });
+  } catch (error) {
+    console.error("Create commande error:", error);
+    return c.json({ error: "Failed to create commande", details: String(error) }, 500);
+  }
+});
+
+// Get commandes by entreprise ID (public - for development)
+app.get("/make-server-dec47541/commandes/:entrepriseId", async (c) => {
+  try {
+    const entrepriseId = c.req.param("entrepriseId");
+    console.log('📋 Getting commandes for entreprise:', entrepriseId);
+
+    const allCommandes = await kv.getByPrefix("commande:");
+    const commandes = allCommandes.filter((cmd: any) => cmd.entrepriseId === entrepriseId);
+    
+    // Sort by date (newest first)
+    commandes.sort((a: any, b: any) => 
+      new Date(b.dateCommande).getTime() - new Date(a.dateCommande).getTime()
+    );
+
+    console.log('✅ Commandes found:', commandes.length);
+    return c.json({ commandes });
+  } catch (error) {
+    console.error("Get commandes error:", error);
+    return c.json({ error: "Failed to get commandes" }, 500);
+  }
+});
+
+// Update commande status (public - for development)
+app.put("/make-server-dec47541/commandes/:id", async (c) => {
+  try {
+    const commandeId = c.req.param("id");
+    const { statut, notes } = await c.req.json();
+    console.log('📝 Updating commande:', commandeId, 'to status:', statut);
+
+    const commande = await kv.get(`commande:${commandeId}`);
+    if (!commande) {
+      console.log('❌ Commande not found:', commandeId);
+      return c.json({ error: "Commande not found" }, 404);
+    }
+
+    // Validate status
+    const validStatuts = ['en_attente', 'acceptee', 'en_cours', 'terminee', 'annulee'];
+    if (statut && !validStatuts.includes(statut)) {
+      return c.json({ error: "Invalid status" }, 400);
+    }
+
+    // If accepting order, deduct stock
+    if (statut === 'acceptee' && commande.statut === 'en_attente') {
+      console.log('✅ Accepting order - deducting stock');
+      for (const item of commande.produits) {
+        const product = await kv.get(`product:${item.productId}`);
+        if (product) {
+          product.stock = Math.max(0, product.stock - item.quantite);
+          await kv.set(`product:${item.productId}`, product);
+          console.log(`📦 Stock updated for ${product.nom}: ${product.stock}`);
+        }
+      }
+    }
+
+    // If canceling accepted order, restore stock
+    if (statut === 'annulee' && commande.statut === 'acceptee') {
+      console.log('🔄 Canceling accepted order - restoring stock');
+      for (const item of commande.produits) {
+        const product = await kv.get(`product:${item.productId}`);
+        if (product) {
+          product.stock += item.quantite;
+          await kv.set(`product:${item.productId}`, product);
+          console.log(`📦 Stock restored for ${product.nom}: ${product.stock}`);
+        }
+      }
+    }
+
+    // Update commande
+    if (statut !== undefined) {
+      commande.statut = statut;
+      commande.dateTraitement = new Date().toISOString();
+      
+      // Create notification for client if they have a userId
+      if (commande.userId) {
+        let notifTitle = '';
+        let notifMessage = '';
+        
+        switch (statut) {
+          case 'acceptee':
+            notifTitle = '✅ Commande acceptée';
+            notifMessage = `Votre commande #${commandeId.slice(0, 8)} a été acceptée et est en cours de préparation`;
+            break;
+          case 'en_cours':
+            notifTitle = '🔄 Commande en cours';
+            notifMessage = `Votre commande #${commandeId.slice(0, 8)} est en cours de traitement`;
+            break;
+          case 'terminee':
+            notifTitle = '🎉 Commande terminée';
+            notifMessage = `Votre commande #${commandeId.slice(0, 8)} est prête !`;
+            break;
+          case 'annulee':
+            notifTitle = '❌ Commande annulée';
+            notifMessage = `Votre commande #${commandeId.slice(0, 8)} a été annulée`;
+            break;
+        }
+        
+        if (notifTitle) {
+          await notifications.createNotification(
+            commande.userId,
+            'commande',
+            notifTitle,
+            notifMessage,
+            '/commandes',
+            { commandeId, statut }
+          );
+        }
+      }
+    }
+    if (notes !== undefined) {
+      commande.notes = notes;
+    }
+
+    await kv.set(`commande:${commandeId}`, commande);
+    console.log('✅ Commande updated:', commandeId);
+
+    return c.json({ commande });
+  } catch (error) {
+    console.error("Update commande error:", error);
+    return c.json({ error: "Failed to update commande" }, 500);
+  }
+});
+
+// ============================================
+// WEBHOOK ROUTES (Discord notifications)
+// ============================================
+
+// Get webhook config for entreprise (protected with admin password)
+app.get("/make-server-dec47541/webhook/:entrepriseId", async (c) => {
+  try {
+    // Check admin password
+    const adminPassword = c.req.header('X-Admin-Password');
+    const correctPassword = Deno.env.get('WEBHOOK_ADMIN_PASSWORD');
+    
+    console.log('🔐 Admin password from header:', adminPassword ? '***' : 'MISSING');
+    console.log('🔐 Correct password from env:', correctPassword ? '***' : 'NOT CONFIGURED');
+    
+    if (!correctPassword) {
+      console.log('⚠️ WEBHOOK_ADMIN_PASSWORD not configured in environment');
+      return c.json({ error: "Configuration serveur manquante - WEBHOOK_ADMIN_PASSWORD non configuré" }, 500);
+    }
+    
+    if (!adminPassword || adminPassword !== correctPassword) {
+      console.log('❌ Unauthorized webhook access attempt');
+      return c.json({ error: "Mot de passe admin requis" }, 401);
+    }
+
+    const entrepriseId = c.req.param("entrepriseId");
+    console.log('🔍 Getting webhook config for entreprise:', entrepriseId);
+
+    const webhookConfig = await kv.get(`webhook:${entrepriseId}`);
+    console.log('✅ Webhook config:', webhookConfig);
+    
+    return c.json({ 
+      webhook: webhookConfig || { entrepriseId, webhookUrl: null } 
+    });
+  } catch (error) {
+    console.error("Get webhook error:", error);
+    return c.json({ error: "Failed to get webhook" }, 500);
+  }
+});
+
+// Set webhook config for entreprise (protected with admin password)
+app.put("/make-server-dec47541/webhook/:entrepriseId", async (c) => {
+  try {
+    // Check admin password
+    const adminPassword = c.req.header('X-Admin-Password');
+    const correctPassword = Deno.env.get('WEBHOOK_ADMIN_PASSWORD');
+    
+    if (!adminPassword || adminPassword !== correctPassword) {
+      console.log('❌ Unauthorized webhook modification attempt');
+      return c.json({ error: "Mot de passe admin requis" }, 401);
+    }
+
+    console.log('🔧 PUT /webhook - Setting webhook configuration');
+    const entrepriseId = c.req.param("entrepriseId");
+    console.log('🏢 Entreprise ID:', entrepriseId);
+
+    const { webhookUrl } = await c.req.json();
+    console.log('🔗 Webhook URL:', webhookUrl);
+
+    const webhookConfig = {
+      entrepriseId,
+      webhookUrl: webhookUrl || null,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await kv.set(`webhook:${entrepriseId}`, webhookConfig);
+    console.log('✅ Webhook configured successfully');
+
+    return c.json({ webhook: webhookConfig });
+  } catch (error) {
+    console.error("Set webhook error:", error);
+    return c.json({ error: "Failed to set webhook" }, 500);
+  }
+});
+
+// ============================================
+// TICKETS ROUTES (Support System)
+// ============================================
+
+// Create ticket (authenticated)
+app.post("/make-server-dec47541/tickets", async (c) => {
+  try {
+    const user = await getAuthenticatedUser(c);
+    if (!user) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const { titre, categorie, priorite, message } = await c.req.json();
+
+    if (!titre || !categorie || !message) {
+      return c.json({ error: "Titre, catégorie et message requis" }, 400);
+    }
+
+    const ticket = {
+      id: crypto.randomUUID(),
+      userId: user.id,
+      userEmail: user.email,
+      userName: user.name,
+      titre,
+      categorie, // 'technique', 'gameplay', 'entreprise', 'autre'
+      priorite: priorite || 'normale', // 'basse', 'normale', 'haute', 'urgente'
+      message,
+      statut: 'ouvert', // 'ouvert', 'en_cours', 'resolu', 'ferme'
+      reponses: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await kv.set(`ticket:${ticket.id}`, ticket);
+    console.log('✅ Ticket created:', ticket.id);
+
+    return c.json({ ticket });
+  } catch (error) {
+    console.error("Create ticket error:", error);
+    return c.json({ error: "Failed to create ticket" }, 500);
+  }
+});
+
+// Get all tickets (staff only)
+app.get("/make-server-dec47541/tickets", async (c) => {
+  try {
+    const user = await getAuthenticatedUser(c);
+    if (!user || user.grade !== 'staff') {
+      return c.json({ error: "Staff access required" }, 403);
+    }
+
+    const tickets = await kv.getByPrefix("ticket:");
+    tickets.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return c.json({ tickets });
+  } catch (error) {
+    console.error("Get tickets error:", error);
+    return c.json({ error: "Failed to get tickets" }, 500);
+  }
+});
+
+// Get user's tickets
+app.get("/make-server-dec47541/my-tickets", async (c) => {
+  try {
+    const user = await getAuthenticatedUser(c);
+    if (!user) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const allTickets = await kv.getByPrefix("ticket:");
+    const userTickets = allTickets.filter((t: any) => t.userId === user.id);
+    userTickets.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return c.json({ tickets: userTickets });
+  } catch (error) {
+    console.error("Get user tickets error:", error);
+    return c.json({ error: "Failed to get tickets" }, 500);
+  }
+});
+
+// Update ticket status (staff only)
+app.put("/make-server-dec47541/tickets/:id", async (c) => {
+  try {
+    const user = await getAuthenticatedUser(c);
+    if (!user || user.grade !== 'staff') {
+      return c.json({ error: "Staff access required" }, 403);
+    }
+
+    const ticketId = c.req.param("id");
+    const { statut, reponse } = await c.req.json();
+
+    const ticket = await kv.get(`ticket:${ticketId}`);
+    if (!ticket) {
+      return c.json({ error: "Ticket not found" }, 404);
+    }
+
+    if (statut) {
+      ticket.statut = statut;
+      
+      // Create notification for status change
+      let notifTitle = '';
+      let notifMessage = '';
+      
+      switch (statut) {
+        case 'en-cours':
+          notifTitle = '🔄 Ticket pris en charge';
+          notifMessage = `Votre ticket "${ticket.titre}" est maintenant pris en charge par le staff`;
+          break;
+        case 'resolu':
+          notifTitle = '✅ Ticket résolu';
+          notifMessage = `Votre ticket "${ticket.titre}" a été résolu`;
+          break;
+        case 'ferme':
+          notifTitle = '🔒 Ticket fermé';
+          notifMessage = `Votre ticket "${ticket.titre}" a été fermé`;
+          break;
+      }
+      
+      if (notifTitle && ticket.userId) {
+        await notifications.createNotification(
+          ticket.userId,
+          'ticket',
+          notifTitle,
+          notifMessage,
+          '/tickets',
+          { ticketId, statut }
+        );
+      }
+    }
+
+    if (reponse) {
+      ticket.reponses.push({
+        id: crypto.randomUUID(),
+        userId: user.id,
+        userName: user.name,
+        message: reponse,
+        createdAt: new Date().toISOString(),
+      });
+      
+      // Create notification for staff response
+      if (ticket.userId) {
+        await notifications.createNotification(
+          ticket.userId,
+          'ticket',
+          '💬 Nouvelle réponse',
+          `Le staff a répondu à votre ticket "${ticket.titre}"`,
+          '/tickets',
+          { ticketId, hasResponse: true }
+        );
+      }
+    }
+
+    ticket.updatedAt = new Date().toISOString();
+    await kv.set(`ticket:${ticketId}`, ticket);
+
+    return c.json({ ticket });
+  } catch (error) {
+    console.error("Update ticket error:", error);
+    return c.json({ error: "Failed to update ticket" }, 500);
+  }
+});
+
+// ============================================
+// EVENTS ROUTES (Calendar System)
+// ============================================
+
+// Create event (staff only)
+app.post("/make-server-dec47541/events", async (c) => {
+  try {
+    const user = await getAuthenticatedUser(c);
+    if (!user || user.grade !== 'staff') {
+      return c.json({ error: "Staff access required" }, 403);
+    }
+
+    const { titre, description, date, heure, type, lieu } = await c.req.json();
+
+    if (!titre || !date) {
+      return c.json({ error: "Titre et date requis" }, 400);
+    }
+
+    const event = {
+      id: crypto.randomUUID(),
+      titre,
+      description: description || '',
+      date,
+      heure: heure || '20:00',
+      type: type || 'general', // 'general', 'pvp', 'construction', 'commerce', 'rp'
+      lieu: lieu || 'Spawn',
+      createdBy: user.name,
+      participants: [],
+      createdAt: new Date().toISOString(),
+    };
+
+    await kv.set(`event:${event.id}`, event);
+    console.log('✅ Event created:', event.id);
+
+    return c.json({ event });
+  } catch (error) {
+    console.error("Create event error:", error);
+    return c.json({ error: "Failed to create event" }, 500);
+  }
+});
+
+// Get all events (public)
+app.get("/make-server-dec47541/events", async (c) => {
+  try {
+    const events = await kv.getByPrefix("event:");
+    events.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    return c.json({ events });
+  } catch (error) {
+    console.error("Get events error:", error);
+    return c.json({ error: "Failed to get events" }, 500);
+  }
+});
+
+// Join event (authenticated)
+app.post("/make-server-dec47541/events/:id/join", async (c) => {
+  try {
+    const user = await getAuthenticatedUser(c);
+    if (!user) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const eventId = c.req.param("id");
+    const event = await kv.get(`event:${eventId}`);
+
+    if (!event) {
+      return c.json({ error: "Event not found" }, 404);
+    }
+
+    if (!event.participants.find((p: any) => p.userId === user.id)) {
+      event.participants.push({
+        userId: user.id,
+        userName: user.name,
+        joinedAt: new Date().toISOString(),
+      });
+      await kv.set(`event:${eventId}`, event);
+    }
+
+    return c.json({ event });
+  } catch (error) {
+    console.error("Join event error:", error);
+    return c.json({ error: "Failed to join event" }, 500);
+  }
+});
+
+// Delete event (staff only)
+app.delete("/make-server-dec47541/events/:id", async (c) => {
+  try {
+    const user = await getAuthenticatedUser(c);
+    if (!user || user.grade !== 'staff') {
+      return c.json({ error: "Staff access required" }, 403);
+    }
+
+    const eventId = c.req.param("id");
+    await kv.del(`event:${eventId}`);
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Delete event error:", error);
+    return c.json({ error: "Failed to delete event" }, 500);
+  }
+});
+
+// ============================================
+// REPUTATION ROUTES (Review System)
+// ============================================
+
+// Add review to entreprise
+app.post("/make-server-dec47541/reviews", async (c) => {
+  try {
+    const user = await getAuthenticatedUser(c);
+    if (!user) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const { entrepriseId, note, commentaire } = await c.req.json();
+
+    if (!entrepriseId || !note) {
+      return c.json({ error: "Entreprise ID et note requis" }, 400);
+    }
+
+    if (note < 1 || note > 5) {
+      return c.json({ error: "La note doit être entre 1 et 5" }, 400);
+    }
+
+    const review = {
+      id: crypto.randomUUID(),
+      entrepriseId,
+      userId: user.id,
+      userName: user.name,
+      note,
+      commentaire: commentaire || '',
+      createdAt: new Date().toISOString(),
+    };
+
+    await kv.set(`review:${review.id}`, review);
+    console.log('✅ Review created:', review.id);
+
+    return c.json({ review });
+  } catch (error) {
+    console.error("Create review error:", error);
+    return c.json({ error: "Failed to create review" }, 500);
+  }
+});
+
+// Get reviews for entreprise (public)
+app.get("/make-server-dec47541/reviews/:entrepriseId", async (c) => {
+  try {
+    const entrepriseId = c.req.param("entrepriseId");
+    const allReviews = await kv.getByPrefix("review:");
+    const reviews = allReviews.filter((r: any) => r.entrepriseId === entrepriseId);
+    reviews.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    // Calculate average rating
+    const avgRating = reviews.length > 0
+      ? reviews.reduce((sum: number, r: any) => sum + r.note, 0) / reviews.length
+      : 0;
+
+    return c.json({ reviews, avgRating, totalReviews: reviews.length });
+  } catch (error) {
+    console.error("Get reviews error:", error);
+    return c.json({ error: "Failed to get reviews" }, 500);
+  }
+});
+
+// ============================================
+// ACCOUNT SETTINGS ROUTES
+// ============================================
+
+// Update password
+app.put("/make-server-dec47541/account/password", async (c) => {
+  try {
+    const user = await getAuthenticatedUser(c);
+    if (!user) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const { currentPassword, newPassword } = await c.req.json();
+
+    if (!currentPassword || !newPassword) {
+      return c.json({ error: "Mots de passe requis" }, 400);
+    }
+
+    if (user.password !== currentPassword) {
+      return c.json({ error: "Mot de passe actuel incorrect" }, 401);
+    }
+
+    if (newPassword.length < 6) {
+      return c.json({ error: "Le nouveau mot de passe doit contenir au moins 6 caractères" }, 400);
+    }
+
+    user.password = newPassword;
+    await kv.set(`user:${user.email}`, user);
+
+    return c.json({ success: true, message: "Mot de passe modifié avec succès" });
+  } catch (error) {
+    console.error("Update password error:", error);
+    return c.json({ error: "Failed to update password" }, 500);
+  }
+});
+
+// ============================================
+// NOTIFICATIONS ROUTES
+// ============================================
+
+// Get user notifications
+app.get("/make-server-dec47541/notifications", async (c) => {
+  try {
+    const user = await getAuthenticatedUser(c);
+    if (!user) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const allNotifications = await kv.getByPrefix("notification:");
+    const userNotifications = allNotifications.filter((n: any) => n.userId === user.id);
+    userNotifications.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const unreadCount = userNotifications.filter((n: any) => !n.read).length;
+
+    return c.json({ notifications: userNotifications, unreadCount });
+  } catch (error) {
+    console.error("Get notifications error:", error);
+    return c.json({ error: "Failed to get notifications" }, 500);
+  }
+});
+
+// Mark notification as read
+app.put("/make-server-dec47541/notifications/:id/read", async (c) => {
+  try {
+    const user = await getAuthenticatedUser(c);
+    if (!user) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const notificationId = c.req.param("id");
+    const notification = await kv.get(`notification:${notificationId}`);
+
+    if (!notification || notification.userId !== user.id) {
+      return c.json({ error: "Notification not found" }, 404);
+    }
+
+    notification.read = true;
+    await kv.set(`notification:${notificationId}`, notification);
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Mark notification read error:", error);
+    return c.json({ error: "Failed to mark notification as read" }, 500);
+  }
+});
+
+// Mark all notifications as read
+app.put("/make-server-dec47541/notifications/read-all", async (c) => {
+  try {
+    const user = await getAuthenticatedUser(c);
+    if (!user) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const allNotifications = await kv.getByPrefix("notification:");
+    const userNotifications = allNotifications.filter((n: any) => n.userId === user.id && !n.read);
+
+    for (const notification of userNotifications) {
+      notification.read = true;
+      await kv.set(`notification:${notification.id}`, notification);
+    }
+
+    console.log(`✅ Marked ${userNotifications.length} notifications as read for user:`, user.id);
+    return c.json({ success: true, count: userNotifications.length });
+  } catch (error) {
+    console.error("Mark all notifications read error:", error);
+    return c.json({ error: "Failed to mark all notifications as read" }, 500);
+  }
+});
+
+// Delete notification
+app.delete("/make-server-dec47541/notifications/:id", async (c) => {
+  try {
+    const user = await getAuthenticatedUser(c);
+    if (!user) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const notificationId = c.req.param("id");
+    const notification = await kv.get(`notification:${notificationId}`);
+
+    if (!notification || notification.userId !== user.id) {
+      return c.json({ error: "Notification not found" }, 404);
+    }
+
+    await kv.del(`notification:${notificationId}`);
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Delete notification error:", error);
+    return c.json({ error: "Failed to delete notification" }, 500);
+  }
+});
+
+// ============================================
+// ADMIN PROMOTION ROUTE (temporary for setup)
+// ============================================
+
+// Promote admin account to staff (one-time setup)
+app.post("/make-server-dec47541/admin/promote", async (c) => {
+  try {
+    const { email, password } = await c.req.json();
+    
+    if (!email || !password) {
+      return c.json({ error: "Email et mot de passe requis" }, 400);
+    }
+    
+    const user = await kv.get(`user:${email}`);
+    
+    if (!user) {
+      return c.json({ error: "Utilisateur introuvable" }, 404);
+    }
+    
+    if (user.password !== password) {
+      return c.json({ error: "Mot de passe incorrect" }, 401);
+    }
+    
+    // Promote to staff
+    user.grade = 'staff';
+    await kv.set(`user:${email}`, user);
+    
+    console.log('✅ User promoted to staff:', email);
+    
+    return c.json({ 
+      success: true, 
+      message: "Vous êtes maintenant staff !",
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        grade: user.grade,
+        entrepriseId: user.entrepriseId,
+        role: user.role,
+        permissions: user.permissions,
+      }
+    });
+  } catch (error) {
+    console.error("Admin promote error:", error);
+    return c.json({ error: "Failed to promote user" }, 500);
   }
 });
 

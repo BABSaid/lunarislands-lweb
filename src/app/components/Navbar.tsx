@@ -1,8 +1,9 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Moon, Menu, X, UserCircle, LogOut, Settings, LayoutDashboard, ChevronDown } from 'lucide-react';
+import { Menu, X, UserCircle, LogOut, Settings, LayoutDashboard, ChevronDown } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { NotificationBell } from './NotificationBell';
 
 export function Navbar() {
   const location = useLocation();
@@ -97,6 +98,8 @@ export function Navbar() {
   const navItems = [
     { path: '/', label: 'Accueil' },
     { path: '/entreprises', label: 'Entreprises' },
+    { path: '/events', label: 'Événements' },
+    { path: '/tickets', label: 'Support' },
     { path: '/reglement', label: 'Règlement' },
   ];
 
@@ -131,6 +134,10 @@ export function Navbar() {
                 {item.label}
               </Link>
             ))}
+            
+            {/* Notification Bell - Only show if user is logged in */}
+            {user && <NotificationBell />}
+            
             <a
               href="https://discord.gg/sa6PyYcMqh"
               target="_blank"

@@ -56,7 +56,6 @@ export function ProductManager({ entrepriseId }: ProductManagerProps) {
     setError('');
     setSuccess('');
 
-    console.log('🔄 Token utilisé:', token);
     console.log('🔄 Entreprise ID:', entrepriseId);
 
     try {
@@ -68,7 +67,7 @@ export function ProductManager({ entrepriseId }: ProductManagerProps) {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`,
+              'Authorization': `Bearer ${publicAnonKey}`,
             },
             body: JSON.stringify({
               nom: formData.nom,
@@ -86,6 +85,7 @@ export function ProductManager({ entrepriseId }: ProductManagerProps) {
         } else {
           const data = await response.json();
           setError(data.error || 'Erreur lors de la modification');
+          console.error('❌ Erreur lors de la modification:', data);
         }
       } else {
         // Create new product
@@ -95,9 +95,10 @@ export function ProductManager({ entrepriseId }: ProductManagerProps) {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`,
+              'Authorization': `Bearer ${publicAnonKey}`,
             },
             body: JSON.stringify({
+              entrepriseId,
               nom: formData.nom,
               stock: Number(formData.stock),
               prix: formData.prix ? Number(formData.prix) : null,
@@ -137,7 +138,7 @@ export function ProductManager({ entrepriseId }: ProductManagerProps) {
         `https://${projectId}.supabase.co/functions/v1/make-server-dec47541/products/${productId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${token}` },
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` },
         }
       );
 
@@ -145,6 +146,10 @@ export function ProductManager({ entrepriseId }: ProductManagerProps) {
         setSuccess('Produit supprimé avec succès !');
         loadProducts();
         setTimeout(() => setSuccess(''), 3000);
+      } else {
+        const data = await response.json();
+        setError(data.error || 'Erreur lors de la suppression');
+        console.error('❌ Erreur lors de la suppression:', data);
       }
     } catch (error) {
       console.error('Delete error:', error);

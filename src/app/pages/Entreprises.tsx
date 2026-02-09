@@ -3,11 +3,13 @@ import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { OrderForm } from '../components/OrderForm';
+import { ReviewSection } from '../components/ReviewSection';
 
 export function Entreprises() {
   const [entreprises, setEntreprises] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedEntreprise, setSelectedEntreprise] = useState<any | null>(null);
+  const [viewingEntreprise, setViewingEntreprise] = useState<any | null>(null);
 
   useEffect(() => {
     loadEntreprises();

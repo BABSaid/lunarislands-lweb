@@ -52,13 +52,15 @@ export function OrderManager({ entrepriseId }: OrderManagerProps) {
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-dec47541/commandes/${entrepriseId}`,
         {
-          headers: { 'Authorization': `Bearer ${token}` },
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` },
         }
       );
 
       if (response.ok) {
         const data = await response.json();
         setCommandes(data.commandes || []);
+      } else {
+        console.error('❌ Failed to load commandes:', await response.text());
       }
     } catch (error) {
       console.error('Load commandes error:', error);
@@ -75,7 +77,7 @@ export function OrderManager({ entrepriseId }: OrderManagerProps) {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
+            'Authorization': `Bearer ${publicAnonKey}`,
           },
           body: JSON.stringify({ statut: newStatut, notes }),
         }
@@ -87,9 +89,14 @@ export function OrderManager({ entrepriseId }: OrderManagerProps) {
         setSelectedCommande(null);
         setNotes('');
         setTimeout(() => setSuccess(''), 3000);
+      } else {
+        const data = await response.json();
+        console.error('❌ Erreur lors de la mise à jour:', data);
+        alert(`Erreur: ${data.error || 'Échec de la mise à jour'}`);
       }
     } catch (error) {
       console.error('Update statut error:', error);
+      alert('Erreur lors de la mise à jour du statut');
     }
   };
 
